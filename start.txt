@@ -1,4 +1,4 @@
--- MM2 Trade Value Overlay v10 (v8 + парсер инвентарей)
+-- MM2 Trade Value Overlay v11 (v8 + парсер инвентарей)
 local PAGES = {
     "https://supremevalues.com/mm2/godlies",
     "https://supremevalues.com/mm2/ancients",
@@ -274,7 +274,6 @@ local function render(a, b)
         BackgroundColor3 = color,
     }):Play()
 end
-
 ----------------------------------------------------------------
 -- ПАРСЕР ИНВЕНТАРЕЙ
 ----------------------------------------------------------------
@@ -377,12 +376,24 @@ local function findButtonByText(txt)
     return nil
 end
 
+-- профиль открыт и это именно нужный игрок (по нику в окне)
 local function profileIs(plr)
     local vp = getVP()
-    local ic = path(vp, "Main", "Nav", "Profile", "Icon")
-    if not (vp and ic and isVisible(ic)) then return false end
-    local id = tostring(ic.Image):match("id=(%d+)")
-    return id == tostring(plr.UserId)
+    local nav = path(vp, "Main", "Nav")
+    if not (nav and isVisible(nav)) then return false end
+    local n1, n2 = plr.Name:lower(), plr.DisplayName:lower()
+    for _, d in ipairs(vp:GetDescendants()) do
+        if d:IsA("TextLabel") then
+            local t = d.Text:lower()
+            if (t == n1 or t == n2) and isVisible(d) then return true end
+        end
+    end
+    local ic = path(nav, "Profile", "Icon")
+    if ic then
+        local id = tostring(ic.Image):match("id=(%d+)")
+        if id == tostring(plr.UserId) then return true end
+    end
+    return false
 end
 
 local function closeProfile()
@@ -484,6 +495,15 @@ end
 ----------------------------------------------------------------
 -- UI парсера
 ----------------------------------------------------------------
+-- тёмный фон: закрывает мигающие окна, пока идёт проверка
+local cover = Instance.new("Frame")
+cover.Size = UDim2.new(1, 0, 1, 120)
+cover.Position = UDim2.new(0, 0, 0, -120)
+cover.BackgroundColor3 = Color3.fromRGB(8, 14, 28)
+cover.BorderSizePixel = 0
+cover.Visible = false
+cover.Parent = gui
+
 local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.new(0, 48, 0, 40)
 openBtn.Position = UDim2.new(1, -58, 0.42, 0)
@@ -497,7 +517,6 @@ openBtn.Draggable = true
 openBtn.Parent = gui
 Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
 
--- плашка "НАЙДЕНО" (появляется сразу, как нашёл)
 local banner = Instance.new("TextLabel")
 banner.Size = UDim2.new(0, 320, 0, 44)
 banner.Position = UDim2.new(0.5, -160, 0, 76)
@@ -574,7 +593,7 @@ input.Size = UDim2.new(1, -16, 0, 32)
 input.Position = UDim2.new(0, 8, 0, 32)
 input.BackgroundColor3 = Color3.fromRGB(15, 30, 55)
 input.TextColor3 = Color3.new(1, 1, 1)
-input.PlaceholderText = "Оружие (Lovely) или сумма (250)"
+input.PlaceholderText = "Оружие или валюта"
 input.PlaceholderColor3 = Color3.fromRGB(150, 170, 200)
 input.Font = Enum.Font.Gotham
 input.TextSize = 14
@@ -687,6 +706,9 @@ local function runParser()
         return
     end
 
+    cover.Visible = true
+    pp.Visible = true
+
     local hits, skipped = 0, 0
     for i, plr in ipairs(list) do
         if stopFlag then break end
@@ -761,7 +783,14 @@ end
 
 openBtn.MouseButton1Click:Connect(function() pp.Visible = not pp.Visible end)
 closeBtn.MouseButton1Click:Connect(function() pp.Visible = false end)
-startBtn.MouseButton1Click:Connect(function() task.spawn(runParser) end)
+startBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local ok, e = pcall(runParser)
+        cover.Visible = false
+        running = false
+        if not ok then setStatus("Ошибка: " .. tostring(e)) end
+    end)
+end)
 stopBtn.MouseButton1Click:Connect(function() stopFlag = true end)
 rejoinBtn.MouseButton1Click:Connect(function()
     stopFlag = true

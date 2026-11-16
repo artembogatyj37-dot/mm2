@@ -275,235 +275,79 @@ local function render(a, b)
     }):Play()
 end
 ----------------------------------------------------------------
--- ПАРСЕР ИНВЕНТАРЕЙ
+-- ПАРСЕР ЧЕРЕЗ REMOTE (v12)
 ----------------------------------------------------------------
-local function isVisible(o)
-    while o do
-        if o:IsA("GuiObject") and not o.Visible then return false end
-        if o:IsA("ScreenGui") and not o.Enabled then return false end
-        o = o.Parent
-    end
-    return true
-end
+local RS = game:GetService("ReplicatedStorage")
+local LOADER = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/artembogatyj37-dot/mm2/refs/heads/main/start.txt"))()'
 
-local function path(root, ...)
-    local o = root
-    for _, n in ipairs({...}) do
-        if not o then return nil end
-        o = o:FindFirstChild(n)
-    end
-    return o
-end
+local nameDB, dbState = {}, "имена: загрузка..."
 
-local function getVP()
-    return path(playerGui, "MainGUI", "Lobby", "ViewProfile")
-end
-
-local function fireSig(sig)
-    if firesignal then
-        pcall(firesignal, sig)
-    elseif getconnections then
-        pcall(function()
-            for _, c in ipairs(getconnections(sig)) do
-                pcall(function() c:Fire() end)
-            end
-        end)
-    end
-end
-
-local function clickUntil(b, check)
-    if not b then return false end
-    local seq = {
-        function() fireSig(b.MouseButton1Click) end,
-        function() fireSig(b.Activated) end,
-        function() fireSig(b.MouseButton1Down); fireSig(b.MouseButton1Up) end,
-    }
-    for _, f in ipairs(seq) do
-        pcall(f)
-        for _ = 1, 8 do
-            task.wait(0.03)
-            local ok, r = pcall(check)
-            if ok and r then return true end
-        end
-    end
-    local ok, r = pcall(check)
-    return ok and r and true or false
-end
-
-local function findClickable(label)
-    local o = label
-    for _ = 1, 5 do
-        if not o then return nil end
-        if o:IsA("GuiButton") then return o end
-        local b = o:FindFirstChildWhichIsA("GuiButton", true)
-        if b then return b end
-        o = o.Parent
-    end
-    return nil
-end
-
-local function scanLabels(names)
-    local found = {}
-    local vp = getVP()
-    for _, d in ipairs(playerGui:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local k = d.Text:lower()
-            if names[k] and not found[k] and isVisible(d) and not (vp and d:IsDescendantOf(vp)) then
-                found[k] = d
-            end
-        end
-    end
-    return found
-end
-
-local function findLabel(plr, found)
-    return found[plr.Name:lower()] or found[plr.DisplayName:lower()]
-end
-
-local function findButtonByText(txt)
-    local vp = getVP()
-    for _, d in ipairs(playerGui:GetDescendants()) do
-        if d:IsA("TextButton") and d.Text == txt and isVisible(d) and not (vp and d:IsDescendantOf(vp)) then
-            return d
-        end
-    end
-    for _, d in ipairs(playerGui:GetDescendants()) do
-        if d:IsA("TextLabel") and d.Text == txt and isVisible(d) and not (vp and d:IsDescendantOf(vp)) then
-            local c = findClickable(d)
-            if c then return c end
-        end
-    end
-    return nil
-end
-
--- профиль открыт и это именно нужный игрок (по нику в окне)
-local function profileIs(plr)
-    local vp = getVP()
-    local nav = path(vp, "Main", "Nav")
-    if not (nav and isVisible(nav)) then return false end
-    local n1, n2 = plr.Name:lower(), plr.DisplayName:lower()
-    for _, d in ipairs(vp:GetDescendants()) do
-        if d:IsA("TextLabel") then
-            local t = d.Text:lower()
-            if (t == n1 or t == n2) and isVisible(d) then return true end
-        end
-    end
-    local ic = path(nav, "Profile", "Icon")
-    if ic then
-        local id = tostring(ic.Image):match("id=(%d+)")
-        if id == tostring(plr.UserId) then return true end
-    end
-    return false
-end
-
-local function closeProfile()
-    local nav = path(getVP(), "Main", "Nav")
-    if nav and isVisible(nav) then
-        clickUntil(nav:FindFirstChild("Close"), function()
-            local n = path(getVP(), "Main", "Nav")
-            return not (n and isVisible(n))
-        end)
-    end
-end
-
-local TABS = {{"Current", "Season 1"}, {"Classic", "Classic"}, {"Holiday", "Holiday"}}
-
-local function validName(t)
-    return t ~= "" and t ~= "Loading" and t ~= "..."
-end
-
-local function collect(frame)
-    local out = {}
-    for _, d in ipairs(frame:GetDescendants()) do
-        if d.Name == "NewItem" and d:IsA("Frame") then
-            local lb = path(d, "ItemName", "Label")
-            if lb and lb:IsA("TextLabel") and validName(lb.Text) then
-                local n = 1
-                local amt = path(d, "Container", "Amount")
-                if amt and amt:IsA("TextLabel") and isVisible(amt) then
-                    n = tonumber(amt.Text:match("%d+")) or 1
+task.spawn(function()
+    pcall(function()
+        local function take(t)
+            for id, e in pairs(t) do
+                if type(id) == "string" and type(e) == "table" then
+                    local nm = e.ItemName or e.Name or e.DisplayName
+                    if type(nm) == "string" and nm ~= "" then nameDB[id] = nm end
                 end
-                out[#out + 1] = {name = lb.Text, amount = n}
             end
         end
-    end
-    return out
-end
-
-local function readTab(key)
-    local vp = getVP()
-    local tb = path(vp, "Main", "Weapons", "TitleBar", "Container", key)
-    local function sel()
-        local vb = tb and tb:FindFirstChild("ViewBorder")
-        return vb and isVisible(vb) or false
-    end
-    if tb and not sel() then
-        clickUntil(tb:FindFirstChild("View"), sel)
-    end
-    local items, last, stable = {}, -1, 0
-    for _ = 1, 40 do
-        task.wait(0.07)
-        local frame = path(getVP(), "Main", "Weapons", "Items", "Container", key)
-        if frame and isVisible(frame) then
-            if frame:IsA("ScrollingFrame") then
-                pcall(function()
-                    frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
-                end)
+        for _, m in ipairs(RS:GetDescendants()) do
+            if m:IsA("ModuleScript") then
+                local fn = m:GetFullName():lower()
+                if fn:find("database", 1, true) or fn:find("item", 1, true) then
+                    local ok, t = pcall(require, m)
+                    if ok and type(t) == "table" then
+                        take(t)
+                        for _, sub in pairs(t) do
+                            if type(sub) == "table" then take(sub) end
+                        end
+                    end
+                end
             end
-            items = collect(frame)
-            if #items == last then stable += 1 else stable = 0 end
-            last = #items
-            if stable >= 2 and #items > 0 or stable >= 4 then break end
         end
-    end
-    local frame = path(getVP(), "Main", "Weapons", "Items", "Container", key)
-    if frame and frame:IsA("ScrollingFrame") then
-        pcall(function() frame.CanvasPosition = Vector2.new(0, 0) end)
-    end
-    return items
+    end)
+    local c = 0
+    for _ in pairs(nameDB) do c += 1 end
+    dbState = c > 0 and ("имён предметов: " .. c) or "имена не найдены, угадываю по ID"
+end)
+
+local function candidates(id)
+    local c = {}
+    if nameDB[id] then c[#c + 1] = nameDB[id] end
+    local s = id:gsub("_[KG]_%d+$", ""):gsub("_%d+$", ""):gsub("_[KG]$", "")
+    local spaced = s:gsub("_", " "):gsub("(%l)(%u)", "%1 %2")
+    c[#c + 1] = spaced
+    local base = spaced:gsub(" Knife$", ""):gsub(" Gun$", "")
+    if base ~= spaced then c[#c + 1] = base end
+    c[#c + 1] = (s:gsub("_", ""))
+    return c
 end
 
-local function openProfile(plr, names)
-    local function have() return findLabel(plr, scanLabels(names)) end
-    if not have() then
-        local plus = path(playerGui, "MainGUI", "Lobby", "LeaderBar", "Main", "Plus", "Button")
-        if not clickUntil(plus, have) then return false, "не открылся список игроков" end
+local function valueOf(id)
+    local cs = candidates(id)
+    for _, nm in ipairs(cs) do
+        local v = getValue(nm)
+        if v then return v, nm end
     end
-    local label = have()
-    if not label then return false, "игрока нет в списке" end
-    local card = findClickable(label)
-    if not card then return false, "нет кнопки у карточки" end
-    if not clickUntil(card, function() return findButtonByText("Profile") ~= nil end) then
-        return false, "не появилась кнопка Profile"
+    return nil, cs[1]
+end
+
+local function fetch(plr)
+    local r = RS:FindFirstChild("Remotes")
+    r = r and r:FindFirstChild("Inventory")
+    r = r and r:FindFirstChild("GetProfileData")
+    if not r then return nil, "нет remote" end
+    local ok, d = pcall(function() return r:InvokeServer(plr.Name) end)
+    if ok and type(d) == "table" and type(d.Weapons) == "table" and type(d.Weapons.Owned) == "table" then
+        return d.Weapons.Owned
     end
-    local pb = findButtonByText("Profile")
-    if not clickUntil(pb, function() return profileIs(plr) end) then
-        return false, "профиль не открылся"
-    end
-    local function wOpen()
-        local w = path(getVP(), "Main", "Weapons")
-        return w and isVisible(w) or false
-    end
-    if not wOpen() then
-        clickUntil(path(getVP(), "Main", "Nav", "Weapons"), wOpen)
-    end
-    if not wOpen() then return false, "вкладка Weapons не открылась" end
-    task.wait(0.2)
-    return true
+    return nil, "нет данных"
 end
 
 ----------------------------------------------------------------
--- UI парсера
+-- UI
 ----------------------------------------------------------------
--- тёмный фон: закрывает мигающие окна, пока идёт проверка
-local cover = Instance.new("Frame")
-cover.Size = UDim2.new(1, 0, 1, 120)
-cover.Position = UDim2.new(0, 0, 0, -120)
-cover.BackgroundColor3 = Color3.fromRGB(8, 14, 28)
-cover.BorderSizePixel = 0
-cover.Visible = false
-cover.Parent = gui
-
 local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.new(0, 48, 0, 40)
 openBtn.Position = UDim2.new(1, -58, 0.42, 0)
@@ -518,12 +362,12 @@ openBtn.Parent = gui
 Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
 
 local banner = Instance.new("TextLabel")
-banner.Size = UDim2.new(0, 320, 0, 44)
-banner.Position = UDim2.new(0.5, -160, 0, 76)
+banner.Size = UDim2.new(0, 330, 0, 50)
+banner.Position = UDim2.new(0.5, -165, 0, 76)
 banner.BackgroundColor3 = COLOR_WIN
 banner.TextColor3 = Color3.new(1, 1, 1)
 banner.Font = Enum.Font.GothamBlack
-banner.TextSize = 15
+banner.TextSize = 14
 banner.TextWrapped = true
 banner.TextStrokeTransparency = 0.5
 banner.Visible = false
@@ -540,7 +384,7 @@ local function notify(text)
     pcall(function()
         StarterGui:SetCore("SendNotification", {Title = "MM2 парсер", Text = text, Duration = 8})
     end)
-    task.delay(10, function()
+    task.delay(12, function()
         if bannerToken == my then banner.Visible = false end
     end)
 end
@@ -668,6 +512,9 @@ local function clearResults()
     end
 end
 
+----------------------------------------------------------------
+-- ЗАПУСК
+----------------------------------------------------------------
 local running, stopFlag = false, false
 
 local function runParser()
@@ -675,6 +522,7 @@ local function runParser()
     local q = normalize(input.Text)
     if q == "" then setStatus("Впиши название оружия или число.") return end
     local target = tonumber((q:gsub("[,%s]", "")))
+    local qn = q:gsub("%s", "")
     running, stopFlag = true, false
     clearResults()
     banner.Visible = false
@@ -692,13 +540,9 @@ local function runParser()
         end
     end
 
-    local list, names = {}, {}
+    local list = {}
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then
-            list[#list + 1] = p
-            names[p.Name:lower()] = true
-            names[p.DisplayName:lower()] = true
-        end
+        if p ~= lp then list[#list + 1] = p end
     end
     if #list == 0 then
         setStatus("На сервере никого нет. Жми «Перезайти».")
@@ -706,76 +550,81 @@ local function runParser()
         return
     end
 
-    cover.Visible = true
-    pp.Visible = true
+    local pending, checked, failed, hits = 0, 0, 0, 0
+    local function refreshStatus()
+        setStatus(string.format("Проверено %d/%d | найдено: %d | %s", checked, #list, hits, dbState))
+    end
 
-    local hits, skipped = 0, 0
-    for i, plr in ipairs(list) do
-        if stopFlag then break end
-        if not plr.Parent then continue end
-        setStatus(string.format("%d/%d: %s | найдено: %d", i, #list, plr.Name, hits))
+    local function process(plr)
+        local inv = fetch(plr)
+        if stopFlag then return end
+        if not inv then failed += 1 return end
+        checked += 1
 
-        local items, err
-        for _ = 1, 2 do
-            closeProfile()
-            local ok, e = pcall(function()
-                local o, er = openProfile(plr, names)
-                if not o then err = er return end
-                local all = {}
-                local hit = false
-                for _, t in ipairs(TABS) do
-                    for _, it in ipairs(readTab(t[1])) do
-                        it.tab = t[2]
-                        all[#all + 1] = it
-                        if not target and normalize(it.name):find(q, 1, true) then hit = true end
-                    end
-                    if hit then break end
-                end
-                items = all
-            end)
-            if not ok then err = tostring(e) end
-            if items then break end
+        local rows, total = {}, 0
+        for id, amt in pairs(inv) do
+            local n = tonumber(amt) or 1
+            local v, nm = valueOf(id)
+            rows[#rows + 1] = {id = id, name = nm or id, amt = n, v = v}
+            if v then total += v * n end
         end
-        closeProfile()
 
-        if not items then
-            skipped += 1
-            addResult("⚠ " .. plr.Name .. ": " .. tostring(err), Color3.fromRGB(255, 200, 120))
-        elseif target then
-            local total = 0
-            for _, it in ipairs(items) do
-                local v = getValue(it.name)
-                if v then total += v * it.amount end
-            end
+        if target then
             if total >= target then
                 hits += 1
-                local msg = "✅ Успешно: " .. plr.Name .. " — " .. fmt(total) .. " валют"
+                table.sort(rows, function(a, b) return (a.v or 0) > (b.v or 0) end)
+                local top = {}
+                for k = 1, math.min(3, #rows) do
+                    local r = rows[k]
+                    if r.v then
+                        top[#top + 1] = r.name .. " (" .. fmt(r.v) .. ")" .. (r.amt > 1 and (" x" .. r.amt) or "")
+                    end
+                end
+                local msg = "✅ " .. plr.Name .. " — " .. fmt(total) .. " валют\nДороже всего: " .. table.concat(top, ", ")
                 addResult(msg, COLOR_WIN)
                 notify(msg)
                 if stopOnHit then stopFlag = true end
             end
         else
             local found = {}
-            for _, it in ipairs(items) do
-                if normalize(it.name):find(q, 1, true) then
-                    found[#found + 1] = it.name .. " [" .. it.tab .. "]" .. (it.amount > 1 and (" x" .. it.amount) or "")
+            for _, r in ipairs(rows) do
+                local idn = r.id:lower():gsub("[_%s]", "")
+                if normalize(r.name):find(q, 1, true) or idn:find(qn, 1, true) then
+                    found[#found + 1] = r.name .. (r.amt > 1 and (" x" .. r.amt) or "")
                 end
             end
             if #found > 0 then
                 hits += 1
-                addResult("✅ " .. plr.Name .. ": " .. table.concat(found, ", "), COLOR_WIN)
-                notify("✅ НАЙДЕНО у " .. plr.Name .. ": " .. table.concat(found, ", "))
+                local msg = "✅ " .. plr.Name .. ": " .. table.concat(found, ", ")
+                addResult(msg, COLOR_WIN)
+                notify(msg)
                 if stopOnHit then stopFlag = true end
             end
         end
+        refreshStatus()
+    end
+
+    refreshStatus()
+    for _, plr in ipairs(list) do
+        if stopFlag then break end
+        pending += 1
+        task.spawn(function()
+            pcall(process, plr)
+            pending -= 1
+        end)
+        task.wait(0.12)
+    end
+    local t0 = os.clock()
+    while pending > 0 and not stopFlag and os.clock() - t0 < 10 do
+        task.wait(0.1)
     end
 
     if hits > 0 then
-        setStatus("Успешно! Найдено: " .. hits .. " (пропущено: " .. skipped .. ")")
+        setStatus("Успешно! Найдено: " .. hits .. " | проверено " .. checked .. "/" .. #list .. " | " .. dbState)
     elseif stopFlag then
-        setStatus("Остановлено. Найдено: 0")
+        setStatus("Остановлено.")
     else
-        setStatus("Никого не нашли (пропущено: " .. skipped .. "). Жми «Перезайти».")
+        setStatus("Никого не нашли (проверено " .. checked .. "/" .. #list .. ", ошибок " .. failed .. "). Жми «Перезайти».")
         addResult("Никого подходящего на этом сервере.", Color3.fromRGB(255, 160, 160))
     end
     running = false
@@ -786,7 +635,6 @@ closeBtn.MouseButton1Click:Connect(function() pp.Visible = false end)
 startBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         local ok, e = pcall(runParser)
-        cover.Visible = false
         running = false
         if not ok then setStatus("Ошибка: " .. tostring(e)) end
     end)
@@ -795,6 +643,10 @@ stopBtn.MouseButton1Click:Connect(function() stopFlag = true end)
 rejoinBtn.MouseButton1Click:Connect(function()
     stopFlag = true
     setStatus("Перезаход...")
+    pcall(function()
+        local q = queue_on_teleport or (syn and syn.queue_on_teleport)
+        if q then q(LOADER) end
+    end)
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
 

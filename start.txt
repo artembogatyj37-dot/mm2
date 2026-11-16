@@ -649,7 +649,6 @@ rejoinBtn.MouseButton1Click:Connect(function()
     end)
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
-
 ----------------------------------------------------------------
 task.spawn(function()
     while true do

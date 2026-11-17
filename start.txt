@@ -1,4 +1,4 @@
--- MM2 Trade Value Overlay v11 (v8 + парсер инвентарей)
+-- MM2 Trade Value Overlay v12 (v8 + парсер инвентарей через remote)
 local PAGES = {
     "https://supremevalues.com/mm2/godlies",
     "https://supremevalues.com/mm2/ancients",
@@ -154,7 +154,6 @@ local function sumOffer(offer)
     end
     return total, dbg
 end
-
 ----------------------------------------------------------------
 -- ДИЗАЙН (голубой)
 ----------------------------------------------------------------
@@ -274,6 +273,7 @@ local function render(a, b)
         BackgroundColor3 = color,
     }):Play()
 end
+
 ----------------------------------------------------------------
 -- ПАРСЕР ЧЕРЕЗ REMOTE (v12)
 ----------------------------------------------------------------
@@ -358,7 +358,6 @@ local function fetch(plr)
     end
     return nil, "нет данных"
 end
-
 ----------------------------------------------------------------
 -- UI
 ----------------------------------------------------------------
@@ -525,7 +524,6 @@ local function clearResults()
         if c:IsA("TextLabel") then c:Destroy() end
     end
 end
-
 ----------------------------------------------------------------
 -- ЗАПУСК
 ----------------------------------------------------------------
@@ -636,10 +634,10 @@ local function runParser()
     if hits > 0 then
         setStatus("Успешно! Найдено: " .. hits .. " | проверено " .. checked .. "/" .. #list .. " | " .. dbState)
     elseif stopFlag then
-    setStatus("Остановлено.")
-elseif remoteTrusted == false then
-    setStatus("Этот remote отдаёт только твой инвентарь, чужие проверить так нельзя.")
-else
+        setStatus("Остановлено.")
+    elseif remoteTrusted == false then
+        setStatus("Этот remote отдаёт только твой инвентарь, чужие проверить так нельзя.")
+    else
         setStatus("Никого не нашли (проверено " .. checked .. "/" .. #list .. ", ошибок " .. failed .. "). Жми «Перезайти».")
         addResult("Никого подходящего на этом сервере.", Color3.fromRGB(255, 160, 160))
     end
@@ -666,6 +664,40 @@ rejoinBtn.MouseButton1Click:Connect(function()
     pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
 end)
 
+----------------------------------------------------------------
+task.spawn(function()
+    while true do
+        pcall(refreshValues)
+        task.wait(REFRESH_SECONDS)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local shown = false
+        for _, name in ipairs(TRADE_GUIS) do
+            local tg = playerGui:FindFirstChild(name)
+            if tg and tg.Enabled ~= false then
+                local yours = tg:FindFirstChild(YOUR_NAME, true)
+                local their = tg:FindFirstChild(THEIR_NAME, true)
+                if yours and their and isShown(their, tg) then
+                    if #texts == 0 then
+                        title.Text = "Загрузка цен..."
+                        mineLbl.Text, theirsLbl.Text = "", ""
+                    else
+                        local a, da = sumOffer(yours)
+                        local b, db = sumOffer(their)
+                        render(a, b)
+                        if SHOW_DEBUG then
+                            dbgLabel.Text = "стр:" .. loadedPages .. " | Я: " .. table.concat(da, ", ") .. " | Он: " .. table.concat(db, ", ")
+                        end
+                    end
+                    shown = true
+                    break
+                end
+            end
         end
+        panel.Visible = shown
     end
 end)

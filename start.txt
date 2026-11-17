@@ -525,135 +525,102 @@ local function clearResults()
     end
 end
 ----------------------------------------------------------------
--- ЗАПУСК
+-- МОЙ ИНВЕНТАРЬ: подсчёт
 ----------------------------------------------------------------
-local running, stopFlag = false, false
+local function countMyInventory()
+    local r = RS:FindFirstChild("Remotes")
+    r = r and r:FindFirstChild("Inventory")
+    r = r and r:FindFirstChild("GetProfileData")
+    if not r then return nil, "нет remote" end
 
-local function runParser()
-    if running then return end
-    local q = normalize(input.Text)
-    if q == "" then setStatus("Впиши название оружия или число.") return end
-    local target = tonumber((q:gsub("[,%s]", "")))
-    local qn = q:gsub("%s", "")
-    running, stopFlag = true, false
+    local ok, d = pcall(function() return r:InvokeServer(lp.Name) end)
+    if not ok or type(d) ~= "table" or type(d.Weapons) ~= "table" or type(d.Weapons.Owned) ~= "table" then
+        return nil, "не удалось получить инвентарь"
+    end
+
+    local rows, total = {}, 0
+    for id, amt in pairs(d.Weapons.Owned) do
+        local n = tonumber(amt) or 1
+        local v, nm = valueOf(id)
+        rows[#rows + 1] = {name = nm or id, amt = n, v = v}
+        if v then total += v * n end
+    end
+    table.sort(rows, function(a, b) return (a.v or 0) > (b.v or 0) end)
+    return {total = total, rows = rows}
+end
+
+local function showMyInventory()
     clearResults()
-    banner.Visible = false
-
-    if target and #texts == 0 then
-        setStatus("Жду загрузку цен...")
-        for _ = 1, 40 do
-            if #texts > 0 then break end
-            task.wait(0.5)
-        end
-        if #texts == 0 then
-            setStatus("Цены не загрузились, попробуй позже.")
-            running = false
-            return
-        end
-    end
-
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then list[#list + 1] = p end
-    end
-    if #list == 0 then
-        setStatus("На сервере никого нет. Жми «Перезайти».")
-        running = false
+    setStatus("Считаю твой инвентарь...")
+    local res, err = countMyInventory()
+    if not res then
+        setStatus("Ошибка: " .. tostring(err))
         return
     end
 
-    local pending, checked, failed, hits = 0, 0, 0, 0
-    local function refreshStatus()
-        setStatus(string.format("Проверено %d/%d | найдено: %d | %s", checked, #list, hits, dbState))
-    end
-
-    local function process(plr)
-        local inv = fetch(plr)
-        if stopFlag then return end
-        if not inv then failed += 1 return end
-        checked += 1
-
-        local rows, total = {}, 0
-        for id, amt in pairs(inv) do
-            local n = tonumber(amt) or 1
-            local v, nm = valueOf(id)
-            rows[#rows + 1] = {id = id, name = nm or id, amt = n, v = v}
-            if v then total += v * n end
+    addResult("Сумма инвентаря: " .. fmt(res.total) .. " валют", COLOR_WIN)
+    addResult("Топ-5 самых дорогих:", Color3.new(1, 1, 1))
+    for i = 1, math.min(5, #res.rows) do
+        local r = res.rows[i]
+        if r.v then
+            addResult(i .. ". " .. r.name .. " — " .. fmt(r.v) .. (r.amt > 1 and (" x" .. r.amt) or ""), Color3.fromRGB(220, 235, 255))
         end
-
-        if target then
-            if total >= target then
-                hits += 1
-                table.sort(rows, function(a, b) return (a.v or 0) > (b.v or 0) end)
-                local top = {}
-                for k = 1, math.min(3, #rows) do
-                    local r = rows[k]
-                    if r.v then
-                        top[#top + 1] = r.name .. " (" .. fmt(r.v) .. ")" .. (r.amt > 1 and (" x" .. r.amt) or "")
-                    end
-                end
-                local msg = "✅ " .. plr.Name .. " — " .. fmt(total) .. " валют\nДороже всего: " .. table.concat(top, ", ")
-                addResult(msg, COLOR_WIN)
-                notify(msg)
-                if stopOnHit then stopFlag = true end
-            end
-        else
-            local found = {}
-            for _, r in ipairs(rows) do
-                local idn = r.id:lower():gsub("[_%s]", "")
-                if normalize(r.name):find(q, 1, true) or idn:find(qn, 1, true) then
-                    found[#found + 1] = r.name .. (r.amt > 1 and (" x" .. r.amt) or "")
-                end
-            end
-            if #found > 0 then
-                hits += 1
-                local msg = "✅ " .. plr.Name .. ": " .. table.concat(found, ", ")
-                addResult(msg, COLOR_WIN)
-                notify(msg)
-                if stopOnHit then stopFlag = true end
-            end
-        end
-        refreshStatus()
     end
-
-    refreshStatus()
-    for _, plr in ipairs(list) do
-        if stopFlag then break end
-        pending += 1
-        task.spawn(function()
-            pcall(process, plr)
-            pending -= 1
-        end)
-        task.wait(0.12)
-    end
-    local t0 = os.clock()
-    while pending > 0 and not stopFlag and os.clock() - t0 < 10 do
-        task.wait(0.1)
-    end
-
-    if hits > 0 then
-        setStatus("Успешно! Найдено: " .. hits .. " | проверено " .. checked .. "/" .. #list .. " | " .. dbState)
-    elseif stopFlag then
-        setStatus("Остановлено.")
-    elseif remoteTrusted == false then
-        setStatus("Этот remote отдаёт только твой инвентарь, чужие проверить так нельзя.")
-    else
-        setStatus("Никого не нашли (проверено " .. checked .. "/" .. #list .. ", ошибок " .. failed .. "). Жми «Перезайти».")
-        addResult("Никого подходящего на этом сервере.", Color3.fromRGB(255, 160, 160))
-    end
-    running = false
+    setStatus("Готово. Всего предметов: " .. #res.rows .. " | " .. dbState)
 end
 
 openBtn.MouseButton1Click:Connect(function() pp.Visible = not pp.Visible end)
 closeBtn.MouseButton1Click:Connect(function() pp.Visible = false end)
 startBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
-        local ok, e = pcall(runParser)
-        running = false
+        local ok, e = pcall(showMyInventory)
         if not ok then setStatus("Ошибка: " .. tostring(e)) end
     end)
 end)
-stopBtn.MouseButton1Click:Connect(function() stopFlag = true end)
+stopBtn.MouseButton1Click:Connect(function() end)
+rejoinBtn.MouseButton1Click:Connect(function()
+    setStatus("Перезаход...")
+    pcall(function()
+        local q = queue_on_teleport or (syn and syn.queue_on_teleport)
+        if q then q(LOADER) end
+    end)
+    pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
+end)
+
+----------------------------------------------------------------
+task.spawn(function()
+    while true do
+        pcall(refreshValues)
+        task.wait(REFRESH_SECONDS)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local shown = false
+        for _, name in ipairs(TRADE_GUIS) do
+            local tg = playerGui:FindFirstChild(name)
+            if tg and tg.Enabled ~= false then
+                local yours = tg:FindFirstChild(YOUR_NAME, true)
+                local their = tg:FindFirstChild(THEIR_NAME, true)
+                if yours and their and isShown(their, tg) then
+                    if #texts == 0 then
+                        title.Text = "Загрузка цен..."
+                        mineLbl.Text, theirsLbl.Text = "", ""
+                    else
+                        local a, da = sumOffer(yours)
+                        local b, db = sumOffer(their)
+                        render(a, b)
+                    end
+                    shown = true
+                    break
+                end
+            end
+        end
+        panel.Visible = shown
+    end
+end)stopBtn.MouseButton1Click:Connect(function() stopFlag = true end)
 rejoinBtn.MouseButton1Click:Connect(function()
     stopFlag = true
     setStatus("Перезаход...")

@@ -6,6 +6,7 @@ local PAGES = {
     "https://supremevalues.com/mm2/vintages",
     "https://supremevalues.com/mm2/chromas",
     "https://supremevalues.com/mm2/pets",
+    "https://supremevalues.com/mm2/legendaries",
 }
 local REFRESH_SECONDS = 600
 local SHOW_DEBUG = false

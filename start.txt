@@ -101,7 +101,6 @@ local function isChromaSlot(slot)
     local ch = tags:FindFirstChild("Chroma")
     return ch and ch.Visible or false
 end
-
 local function fmt(n)
     local s
     if n % 1 == 0 then s = string.format("%d", n) else s = string.format("%.1f", n) end
@@ -145,12 +144,11 @@ local function sumOffer(offer)
     for _, slot in ipairs(cont:GetChildren()) do
         if slot.Name:match("^NewItem") then
             if isShown(slot, offer) then
-                                local name = readName(slot)
-                if name and isChromaSlot(slot) then
-                    name = "Chroma " .. name
-                end
-                if name then
-                    local v, src = getValue(name)
+                                                local name = readName(slot)
+if name then
+    local nm = isChromaSlot(slot) and ("Chroma " .. name) or name
+    local v, src = getValue(nm)
+    if not v and isChromaSlot(slot) then v, src = getValue(name) end
                     if v then total += v end
                     setPrice(slot, v)
                     dbg[#dbg + 1] = name .. "=" .. (v and (v .. "@" .. src) or "?")

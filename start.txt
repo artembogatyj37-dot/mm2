@@ -95,6 +95,12 @@ local function readName(slot)
     end
     return best
 end
+local function isChromaSlot(slot)
+    local tags = slot:FindFirstChild("Tags")
+    if not tags then return false end
+    local ch = tags:FindFirstChild("Chroma")
+    return ch and ch.Visible or false
+end
 
 local function fmt(n)
     local s
@@ -139,7 +145,10 @@ local function sumOffer(offer)
     for _, slot in ipairs(cont:GetChildren()) do
         if slot.Name:match("^NewItem") then
             if isShown(slot, offer) then
-                local name = readName(slot)
+                                local name = readName(slot)
+                if name and isChromaSlot(slot) then
+                    name = "Chroma " .. name
+                end
                 if name then
                     local v, src = getValue(name)
                     if v then total += v end
